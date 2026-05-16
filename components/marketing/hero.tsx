@@ -27,17 +27,13 @@ export function Hero() {
           </p>
           
           <div className="mt-10 flex flex-col gap-4 sm:flex-row animate-in fade-in slide-in-from-bottom-8 duration-1000 fill-mode-both delay-500">
-            <Link href="/sign-up">
-              <Button size="lg" className="h-12 px-8 text-base">
-                Get Started Free
-                <ArrowRight className="ml-2 h-4 w-4" />
-              </Button>
-            </Link>
-            <Link href="#features">
-              <Button variant="outline" size="lg" className="h-12 px-8 text-base">
-                Explore Features
-              </Button>
-            </Link>
+            <Button size="lg" className="h-12 px-8 text-base" render={<Link href="/sign-up" />}>
+              Get Started Free
+              <ArrowRight className="ml-2 h-4 w-4" />
+            </Button>
+            <Button variant="outline" size="lg" className="h-12 px-8 text-base" render={<Link href="#features" />}>
+              Explore Features
+            </Button>
           </div>
         </div>
       </div>

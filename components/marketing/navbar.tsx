@@ -47,16 +47,12 @@ export function Navbar() {
         <div className="flex items-center gap-4">
           <ModeToggle />
           <div className="hidden items-center gap-4 md:flex">
-            <Link href="/sign-in">
-              <Button variant="ghost" size="sm">
-                Sign In
-              </Button>
-            </Link>
-            <Link href="/sign-up">
-              <Button size="sm" className="bg-primary hover:bg-primary/90">
-                Get Started Free
-              </Button>
-            </Link>
+            <Button variant="ghost" size="sm" render={<Link href="/sign-in" />}>
+              Sign In
+            </Button>
+            <Button size="sm" className="bg-primary hover:bg-primary/90" render={<Link href="/sign-up" />}>
+              Get Started Free
+            </Button>
           </div>
           
           <div className="md:hidden">
@@ -79,16 +75,12 @@ export function Navbar() {
                     </Link>
                   ))}
                   <Separator className="my-4" />
-                  <Link href="/sign-in" className="w-full">
-                    <Button variant="outline" className="w-full">
-                      Sign In
-                    </Button>
-                  </Link>
-                  <Link href="/sign-up" className="w-full">
-                    <Button className="w-full">
-                      Get Started Free
-                    </Button>
-                  </Link>
+                  <Button variant="outline" className="w-full" render={<Link href="/sign-in" />}>
+                    Sign In
+                  </Button>
+                  <Button className="w-full" render={<Link href="/sign-up" />}>
+                    Get Started Free
+                  </Button>
                 </div>
               </SheetContent>
             </Sheet>
