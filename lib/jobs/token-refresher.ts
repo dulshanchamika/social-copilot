@@ -1,14 +1,18 @@
 import { Worker, Job } from "bullmq";
 import { redis } from "@/lib/redis";
+import { TOKEN_REFRESHER_QUEUE } from "@/lib/queue";
 import { db } from "@/lib/db";
 import { social_accounts } from "@/lib/db/schema";
 import { encryptToken, decryptToken } from "@/lib/encryption";
 import { lt, sql } from "drizzle-orm";
 import { PLATFORMS, PlatformId } from "@/lib/platforms";
 
-export const TOKEN_REFRESHER_QUEUE = "token-refresher";
 
-export const tokenRefresherWorker = new Worker(
+const globalForTokenWorkers = global as unknown as { 
+  tokenRefresherWorker: Worker;
+};
+
+export const tokenRefresherWorker = globalForTokenWorkers.tokenRefresherWorker || new Worker(
   TOKEN_REFRESHER_QUEUE,
   async (job: Job) => {
     console.log(`Starting token refresh job: ${job.id}`);
@@ -83,6 +87,8 @@ export const tokenRefresherWorker = new Worker(
   },
   { connection: redis }
 );
+
+if (process.env.NODE_ENV !== "production") globalForTokenWorkers.tokenRefresherWorker = tokenRefresherWorker;
 
 tokenRefresherWorker.on("completed", (job) => {
   console.log(`Job ${job.id} completed successfully`);

@@ -26,6 +26,7 @@ export const posts = pgTable("posts", {
   content: text("content").notNull(),
   media_urls: text("media_urls").array(),
   platforms: text("platforms").array().notNull(),
+  account_ids: uuid("account_ids").array().notNull(),
   status: text("status").default("draft").notNull(), // 'draft', 'scheduled', 'published', 'failed'
   scheduled_at: timestamp("scheduled_at"),
   published_at: timestamp("published_at"),
@@ -34,9 +35,10 @@ export const posts = pgTable("posts", {
 export const post_platform_results = pgTable("post_platform_results", {
   id: uuid("id").primaryKey().defaultRandom(),
   post_id: uuid("post_id").references(() => posts.id, { onDelete: "cascade" }).notNull(),
+  account_id: uuid("account_id").references(() => social_accounts.id, { onDelete: "cascade" }),
   platform: text("platform").notNull(),
   platform_post_id: text("platform_post_id"),
-  status: text("status").notNull(), // 'success', 'failed'
+  status: text("status").notNull(), // 'published', 'failed'
   error: text("error"),
 });
 

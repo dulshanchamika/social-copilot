@@ -1,11 +1,5 @@
 import React from "react";
-import { 
-  Card, 
-  CardContent, 
-  CardDescription, 
-  CardHeader, 
-  CardTitle 
-} from "@/components/ui/card";
+import { ScheduledPostsList } from "@/components/scheduled/scheduled-posts-list";
 
 export default function ScheduledPage() {
   return (
@@ -17,19 +11,7 @@ export default function ScheduledPage() {
         </p>
       </div>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Calendar View</CardTitle>
-          <CardDescription>
-            Your posting schedule at a glance.
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div className="h-[500px] flex items-center justify-center border rounded-md text-muted-foreground">
-            Calendar view placeholder...
-          </div>
-        </CardContent>
-      </Card>
+      <ScheduledPostsList />
     </div>
   );
 }

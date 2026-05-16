@@ -70,7 +70,9 @@ export default async function AccountsPage({
       )}
 
       <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
-        {Object.values(PLATFORMS).map((platform) => (
+        {Object.values(PLATFORMS)
+          .filter((platform) => platform.canPublish)
+          .map((platform) => (
           <PlatformCard 
             key={platform.id} 
             platform={{

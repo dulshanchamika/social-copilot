@@ -29,7 +29,9 @@ export interface PlatformConfig {
   scopes: string[];
   authUrl: string;
   tokenUrl: string;
+  canPublish: boolean;
   revokeToken?: (accessToken: string, clientId: string, clientSecret: string) => Promise<void>;
+  publish: (accessToken: string, content: string, mediaUrls?: string[]) => Promise<string>;
 }
 
 export const PLATFORMS: Record<PlatformId, PlatformConfig> = {
@@ -41,6 +43,10 @@ export const PLATFORMS: Record<PlatformId, PlatformConfig> = {
     scopes: ["instagram_basic", "instagram_content_publish", "instagram_manage_comments"],
     authUrl: "https://api.instagram.com/oauth/authorize",
     tokenUrl: "https://api.instagram.com/oauth/access_token",
+    canPublish: false,
+    publish: async () => {
+      throw new Error("Instagram publishing is not yet implemented");
+    },
   },
   youtube: {
     id: "youtube",
@@ -50,11 +56,15 @@ export const PLATFORMS: Record<PlatformId, PlatformConfig> = {
     scopes: ["https://www.googleapis.com/auth/youtube.upload", "https://www.googleapis.com/auth/youtube.force-ssl"],
     authUrl: "https://accounts.google.com/o/oauth2/v2/auth",
     tokenUrl: "https://oauth2.googleapis.com/token",
+    canPublish: false,
     revokeToken: async (token) => {
       await fetch(`https://oauth2.googleapis.com/revoke?token=${token}`, {
         method: "POST",
         headers: { "Content-Type": "application/x-www-form-urlencoded" },
       });
+    },
+    publish: async () => {
+      throw new Error("YouTube publishing is not yet implemented");
     },
   },
   tiktok: {
@@ -65,12 +75,16 @@ export const PLATFORMS: Record<PlatformId, PlatformConfig> = {
     scopes: ["user.info.basic", "video.upload", "video.list"],
     authUrl: "https://www.tiktok.com/auth/authorize/",
     tokenUrl: "https://open-api.tiktok.com/oauth/access_token/",
+    canPublish: false,
     revokeToken: async (token, clientId, clientSecret) => {
       await fetch("https://open.tiktokapis.com/v2/oauth/revoke/", {
         method: "POST",
         headers: { "Content-Type": "application/x-www-form-urlencoded" },
         body: new URLSearchParams({ token, client_key: clientId, client_secret: clientSecret }),
       });
+    },
+    publish: async () => {
+      throw new Error("TikTok publishing is not yet implemented");
     },
   },
   facebook: {
@@ -81,10 +95,14 @@ export const PLATFORMS: Record<PlatformId, PlatformConfig> = {
     scopes: ["pages_manage_posts", "pages_read_engagement", "pages_show_list"],
     authUrl: "https://www.facebook.com/v12.0/dialog/oauth",
     tokenUrl: "https://graph.facebook.com/v12.0/oauth/access_token",
+    canPublish: false,
     revokeToken: async (token) => {
       await fetch(`https://graph.facebook.com/v12.0/me/permissions?access_token=${token}`, {
         method: "DELETE",
       });
+    },
+    publish: async () => {
+      throw new Error("Facebook publishing is not yet implemented");
     },
   },
   linkedin: {
@@ -95,12 +113,16 @@ export const PLATFORMS: Record<PlatformId, PlatformConfig> = {
     scopes: ["r_liteprofile", "r_emailaddress", "w_member_social"],
     authUrl: "https://www.linkedin.com/oauth/v2/authorization",
     tokenUrl: "https://www.linkedin.com/oauth/v2/accessToken",
+    canPublish: false,
     revokeToken: async (token, clientId, clientSecret) => {
       await fetch("https://www.linkedin.com/oauth/v2/revoke", {
         method: "POST",
         headers: { "Content-Type": "application/x-www-form-urlencoded" },
         body: new URLSearchParams({ token, client_id: clientId, client_secret: clientSecret }),
       });
+    },
+    publish: async () => {
+      throw new Error("LinkedIn publishing is not yet implemented");
     },
   },
   pinterest: {
@@ -111,6 +133,7 @@ export const PLATFORMS: Record<PlatformId, PlatformConfig> = {
     scopes: ["boards:read", "pins:read", "pins:write"],
     authUrl: "https://www.pinterest.com/oauth/",
     tokenUrl: "https://api.pinterest.com/v5/oauth/token",
+    canPublish: false,
     revokeToken: async (token, clientId, clientSecret) => {
       await fetch("https://api.pinterest.com/v5/oauth/revoke", {
         method: "POST",
@@ -121,6 +144,9 @@ export const PLATFORMS: Record<PlatformId, PlatformConfig> = {
         body: new URLSearchParams({ token }),
       });
     },
+    publish: async () => {
+      throw new Error("Pinterest publishing is not yet implemented");
+    },
   },
   discord: {
     id: "discord",
@@ -130,12 +156,16 @@ export const PLATFORMS: Record<PlatformId, PlatformConfig> = {
     scopes: ["identify", "guilds", "webhook.incoming"],
     authUrl: "https://discord.com/api/oauth2/authorize",
     tokenUrl: "https://discord.com/api/oauth2/token",
+    canPublish: false,
     revokeToken: async (token, clientId, clientSecret) => {
       await fetch("https://discord.com/api/oauth2/token/revoke", {
         method: "POST",
         headers: { "Content-Type": "application/x-www-form-urlencoded" },
         body: new URLSearchParams({ token, client_id: clientId, client_secret: clientSecret }),
       });
+    },
+    publish: async () => {
+      throw new Error("Discord publishing is not yet implemented");
     },
   },
   x: {
@@ -146,12 +176,28 @@ export const PLATFORMS: Record<PlatformId, PlatformConfig> = {
     scopes: ["tweet.read", "tweet.write", "users.read", "offline.access"],
     authUrl: "https://twitter.com/i/oauth2/authorize",
     tokenUrl: "https://api.twitter.com/2/oauth2/token",
+    canPublish: true,
     revokeToken: async (token, clientId) => {
       await fetch("https://api.twitter.com/2/oauth2/revoke", {
         method: "POST",
         headers: { "Content-Type": "application/x-www-form-urlencoded" },
         body: new URLSearchParams({ token, client_id: clientId, token_type_hint: "access_token" }),
       });
+    },
+    publish: async (token, content) => {
+      const res = await fetch("https://api.twitter.com/2/tweets", {
+        method: "POST",
+        headers: {
+          "Authorization": `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ text: content }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.detail || data.message || "X API error");
+      }
+      return data.data.id;
     },
   },
   slack: {
@@ -162,6 +208,7 @@ export const PLATFORMS: Record<PlatformId, PlatformConfig> = {
     scopes: ["incoming-webhook", "chat:write"],
     authUrl: "https://slack.com/oauth/v2/authorize",
     tokenUrl: "https://slack.com/api/oauth.v2.access",
+    canPublish: false,
     revokeToken: async (token) => {
       await fetch("https://slack.com/api/auth.revoke", {
         method: "POST",
@@ -170,6 +217,9 @@ export const PLATFORMS: Record<PlatformId, PlatformConfig> = {
           "Authorization": `Bearer ${token}`
         },
       });
+    },
+    publish: async () => {
+      throw new Error("Slack publishing is not yet implemented");
     },
   },
 };
