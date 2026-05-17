@@ -78,6 +78,14 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       status = "scheduled";
     }
 
+    // Check plan limits if transitioning from draft to published/scheduled
+    if (post.status === "draft" && status !== "draft") {
+      const { canCreatePost } = await import("@/lib/plan-gates");
+      if (!(await canCreatePost(user.id))) {
+        return NextResponse.json({ error: "upgrade_required", feature: "post_composer" }, { status: 403 });
+      }
+    }
+
     // Determine if we are doing an immediate publish (not draft, and no future date)
     const isImmediatePublish = !isDraft && !isFutureScheduled;
 

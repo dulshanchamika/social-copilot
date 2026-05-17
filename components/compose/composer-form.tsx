@@ -23,6 +23,7 @@ import { cn } from "@/lib/utils";
 import { upload } from "@imagekit/react";
 import type { UploadResponse } from "@imagekit/react";
 import { PLATFORMS, PlatformId } from "@/lib/platforms";
+import { UpgradeDialog } from "@/components/billing/upgrade-dialog";
 
 // ─── Platform metadata ────────────────────────────────────────────────────────
 const PLATFORM_CHAR_LIMITS: Record<string, number> = {
@@ -125,6 +126,11 @@ export function ComposerForm() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [activePreviewPlatform, setActivePreviewPlatform] = useState<string>("");
 
+  // Plan limits state
+  const [userPlan, setUserPlan] = useState<string>("free");
+  const [upgradeDialogOpen, setUpgradeDialogOpen] = useState(false);
+  const [upgradeFeature, setUpgradeFeature] = useState<"ai_captions" | "posts">("ai_captions");
+
   // ── Load connected accounts ───────────────────────────────────────────────
   useEffect(() => {
     fetch("/api/accounts")
@@ -134,6 +140,15 @@ export function ComposerForm() {
         setLoadingAccounts(false);
       })
       .catch(() => setLoadingAccounts(false));
+
+    fetch("/api/user/plan")
+      .then((r) => r.json())
+      .then((data) => {
+        if (data.plan) {
+          setUserPlan(data.plan.toLowerCase());
+        }
+      })
+      .catch(() => {});
   }, []);
 
   useEffect(() => {
@@ -178,6 +193,12 @@ export function ComposerForm() {
 
   // ── AI streaming caption ──────────────────────────────────────────────────
   const handleGenerateAI = async () => {
+    if (userPlan === "free") {
+      setUpgradeFeature("ai_captions");
+      setUpgradeDialogOpen(true);
+      return;
+    }
+
     if (!topic.trim()) {
       toast.error("Enter a topic for AI generation");
       return;
@@ -312,7 +333,14 @@ export function ComposerForm() {
         }),
       });
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error);
+      if (!res.ok) {
+        if (res.status === 403 && data.error === "upgrade_required") {
+          setUpgradeFeature("posts");
+          setUpgradeDialogOpen(true);
+          return;
+        }
+        throw new Error(data.error);
+      }
       toast.success(isDraft ? "Draft saved!" : postNow ? "Post published!" : "Post scheduled!");
       router.push("/dashboard/scheduled");
     } catch (e: any) {
@@ -385,37 +413,62 @@ export function ComposerForm() {
         </Card>
 
         {/* AI Caption Generator */}
-        <Card>
+        <Card className={cn(userPlan === "free" && "relative overflow-hidden border-indigo-500/20 bg-gradient-to-r from-indigo-950/5 to-purple-950/5")}>
           <CardHeader className="pb-3">
-            <CardTitle className="text-base flex items-center gap-2">
-              <SparklesIcon className="size-4 text-primary" /> AI Caption
+            <CardTitle className="text-base flex items-center justify-between">
+              <span className="flex items-center gap-2">
+                <SparklesIcon className="size-4 text-primary" /> AI Caption
+              </span>
+              {userPlan === "free" && (
+                <Badge className="bg-indigo-500/10 text-indigo-400 hover:bg-indigo-500/20 border border-indigo-500/20 text-[10px] font-semibold py-0.5 px-2">
+                  PRO FEATURE
+                </Badge>
+              )}
             </CardTitle>
           </CardHeader>
-          <CardContent>
-            <div className="flex flex-wrap gap-2">
-              <Input
-                placeholder="Topic (e.g. Launching our new product)"
-                value={topic}
-                onChange={(e) => setTopic(e.target.value)}
-                className="flex-1 min-w-[180px]"
-                onKeyDown={(e) => e.key === "Enter" && handleGenerateAI()}
-              />
-              <Select value={tone} onValueChange={(v) => setTone(v || "professional")}>
-                <SelectTrigger className="w-[140px]">
-                  <SelectValue placeholder="Tone" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="professional">Professional</SelectItem>
-                  <SelectItem value="casual">Casual</SelectItem>
-                  <SelectItem value="funny">Funny</SelectItem>
-                  <SelectItem value="excited">Excited</SelectItem>
-                  <SelectItem value="inspirational">Inspirational</SelectItem>
-                </SelectContent>
-              </Select>
-              <Button onClick={handleGenerateAI} disabled={isGenerating} className="gap-2">
-                {isGenerating ? <Loader2Icon className="size-4 animate-spin" /> : <SparklesIcon className="size-4" />}
-                {isGenerating ? "Generating…" : "Generate"}
-              </Button>
+          <CardContent className="relative">
+            {userPlan === "free" && (
+              <div className="absolute inset-0 z-10 flex flex-col items-center justify-center bg-card/75 backdrop-blur-[1.5px] p-4 text-center">
+                <p className="text-sm font-semibold text-foreground flex items-center gap-1">
+                  <span>AI Caption Generator is Locked</span>
+                  <SparklesIcon className="size-3.5 text-yellow-500 fill-yellow-500/10" />
+                </p>
+                <Button 
+                  size="sm" 
+                  variant="link" 
+                  onClick={() => { setUpgradeFeature("ai_captions"); setUpgradeDialogOpen(true); }}
+                  className="text-xs text-indigo-400 hover:text-indigo-300 font-bold p-0 h-auto mt-1"
+                >
+                  Upgrade plan to unlock AI writing →
+                </Button>
+              </div>
+            )}
+            <div className={cn(userPlan === "free" && "opacity-25 pointer-events-none")}>
+              <div className="flex flex-wrap gap-2">
+                <Input
+                  placeholder="Topic (e.g. Launching our new product)"
+                  value={topic}
+                  onChange={(e) => setTopic(e.target.value)}
+                  className="flex-1 min-w-[180px]"
+                  onKeyDown={(e) => e.key === "Enter" && handleGenerateAI()}
+                />
+                <Select value={tone} onValueChange={(v) => setTone(v || "professional")}>
+                  <SelectTrigger className="w-[140px]">
+                    <SelectValue placeholder="Tone" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="professional">Professional</SelectItem>
+                    <SelectItem value="casual">Casual</SelectItem>
+                    <SelectItem value="funny">Funny</SelectItem>
+                    <SelectItem value="excited">Excited</SelectItem>
+                    <SelectItem value="inspirational">Inspirational</SelectItem>
+                  </SelectContent>
+                </Select>
+                <Button onClick={handleGenerateAI} disabled={isGenerating} className="gap-2">
+                  {isGenerating ? <Loader2Icon className="size-4 animate-spin" /> : <SparklesIcon className="size-4" />}
+                  {isGenerating ? "Generating…" : "Generate"}
+                </Button>
+              </div>
             </div>
           </CardContent>
         </Card>
@@ -698,6 +751,11 @@ export function ComposerForm() {
           </CardContent>
         </Card>
       </div>
+      <UpgradeDialog 
+        isOpen={upgradeDialogOpen}
+        onOpenChange={setUpgradeDialogOpen}
+        feature={upgradeFeature}
+      />
     </div>
   );
 }

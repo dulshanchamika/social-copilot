@@ -6,26 +6,72 @@ import { eq, and, desc } from "drizzle-orm";
 import { PLATFORMS, PlatformId } from "../platforms";
 import { decryptToken } from "../encryption";
 import { autoReplierQueue, COMMENT_WATCHER_QUEUE } from "../queue";
+import { CommentWatcherJobData } from "./types";
 
 export const commentWatcherWorker = new Worker(
   COMMENT_WATCHER_QUEUE,
-  async (job: Job) => {
+  async (job: Job<CommentWatcherJobData>) => {
     console.log("Running comment watcher...");
 
     try {
-      // 1. Fetch all active rules
+      // 1. Fetch all active rules with user and account
       const activeRules = await db.query.auto_reply_rules.findMany({
         where: eq(auto_reply_rules.is_active, true),
         with: {
           account: true,
+          user: true,
         },
       });
+
+      // Group active rules by user to enforce limits
+      const userActiveRulesMap = new Map<string, typeof activeRules>();
+      for (const rule of activeRules) {
+        if (!rule.user) continue;
+        const userRules = userActiveRulesMap.get(rule.user_id) || [];
+        userRules.push(rule);
+        userActiveRulesMap.set(rule.user_id, userRules);
+      }
+
+      // Sort each user's active rules stably by ID
+      for (const [userId, rules] of userActiveRulesMap.entries()) {
+        rules.sort((a, b) => a.id.localeCompare(b.id));
+      }
 
       for (const rule of activeRules) {
         try {
           const platform = PLATFORMS[rule.platform as PlatformId];
           if (!platform || !rule.account) {
             console.error(`Missing platform or account for rule ${rule.id}`);
+            continue;
+          }
+
+          const user = rule.user;
+          if (!user) {
+            console.error(`Missing owner for rule ${rule.id}`);
+            continue;
+          }
+
+          const plan = (user.plan || "free").toLowerCase();
+
+          // 1. Check if user plan allows any auto-reply rules
+          if (plan === "free") {
+            console.warn(`User ${user.id} is on free plan. Rule ${rule.id} skipped.`);
+            continue;
+          }
+
+          // 2. Check if user is within the plan's active rules limit
+          if (plan === "pro") {
+            const userRules = userActiveRulesMap.get(rule.user_id) || [];
+            const ruleIndex = userRules.findIndex((r) => r.id === rule.id);
+            if (ruleIndex === -1 || ruleIndex >= 5) {
+              console.warn(`Rule ${rule.id} exceeds the active rules limit for Pro user ${user.id}. Skipped.`);
+              continue;
+            }
+          }
+
+          // 3. Check AI replies entitlement
+          if (rule.use_ai && plan !== "pro" && plan !== "business") {
+            console.warn(`User ${user.id} does not have AI features on plan ${plan}. Rule ${rule.id} skipped.`);
             continue;
           }
 

@@ -26,6 +26,13 @@ export async function POST(req: NextRequest) {
     const body = await req.json();
     const { content, accountIds, mediaUrls, scheduledAt, isDraft } = body;
 
+    if (!isDraft) {
+      const { canCreatePost } = await import("@/lib/plan-gates");
+      if (!(await canCreatePost(user.id))) {
+        return NextResponse.json({ error: "upgrade_required", feature: "post_composer" }, { status: 403 });
+      }
+    }
+
     if (!content || !accountIds || accountIds.length === 0) {
       return NextResponse.json({ error: "Missing required fields" }, { status: 400 });
     }

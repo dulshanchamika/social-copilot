@@ -62,6 +62,15 @@ export async function POST(req: NextRequest) {
       isActive 
     } = body;
 
+    const { canCreateAutoReplyRule, hasAIFeatures } = await import("@/lib/plan-gates");
+    if (!(await canCreateAutoReplyRule(user.id))) {
+      return NextResponse.json({ error: "upgrade_required", feature: "auto_reply" }, { status: 403 });
+    }
+
+    if (useAi && !(await hasAIFeatures(user.id))) {
+      return NextResponse.json({ error: "upgrade_required", feature: "ai_replies" }, { status: 403 });
+    }
+
     if (!accountId || !triggerType) {
       return NextResponse.json({ error: "Missing required fields" }, { status: 400 });
     }

@@ -44,9 +44,10 @@ interface RuleSheetProps {
     is_active: boolean;
   }; // If editing
   onSuccess: () => void;
+  onUpgradeTrigger?: (feature: "auto_reply" | "ai_replies") => void;
 }
 
-export function RuleSheet({ open, onOpenChange, rule, onSuccess }: RuleSheetProps) {
+export function RuleSheet({ open, onOpenChange, rule, onSuccess, onUpgradeTrigger }: RuleSheetProps) {
   const [loading, setLoading] = useState(false);
   const [accounts, setAccounts] = useState<ConnectedAccount[]>([]);
   const [loadingAccounts, setLoadingAccounts] = useState(false);
@@ -124,7 +125,12 @@ export function RuleSheet({ open, onOpenChange, rule, onSuccess }: RuleSheetProp
       });
 
       if (!res.ok) {
-        const error = await res.json();
+        const error = await res.json().catch(() => ({}));
+        if (res.status === 403 && error.error === "upgrade_required") {
+          onOpenChange(false);
+          onUpgradeTrigger?.(error.feature || "auto_reply");
+          return;
+        }
         throw new Error(error.error || "Failed to save rule");
       }
 

@@ -193,6 +193,11 @@ export async function GET(
         } as any)
         .where(eq(social_accounts.id, existing[0].id));
     } else {
+      const { canConnectMoreAccounts } = await import("@/lib/plan-gates");
+      if (!(await canConnectMoreAccounts(user.id))) {
+        return NextResponse.redirect(new URL("/dashboard/accounts?error=upgrade_required", request.url));
+      }
+
       await db.insert(social_accounts).values({
         user_id: user.id,
         platform,

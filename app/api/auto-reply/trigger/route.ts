@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { auto_reply_rules, auto_reply_logs, post_platform_results } from "@/lib/db/schema";
-import { eq } from "drizzle-orm";
+import { eq, and } from "drizzle-orm";
 import { PLATFORMS, PlatformId } from "@/lib/platforms";
 import { decryptToken } from "@/lib/encryption";
 import { generateAutoReply } from "@/lib/services/ai-service";
@@ -23,11 +23,37 @@ export async function POST(req: NextRequest) {
       where: eq(auto_reply_rules.id, ruleId),
       with: {
         account: true,
+        user: true,
       },
     });
 
-    if (!rule || !rule.account || !rule.is_active) {
-      return NextResponse.json({ error: "Rule is inactive or missing" }, { status: 400 });
+    if (!rule || !rule.account || !rule.user || !rule.is_active) {
+      return NextResponse.json({ error: "Rule is inactive, missing, or owner not found" }, { status: 400 });
+    }
+
+    // Plan entitlement check
+    const plan = (rule.user.plan || "free").toLowerCase();
+    if (plan === "free") {
+      return NextResponse.json({ error: "Owner has no auto-reply entitlement (Free plan)" }, { status: 403 });
+    }
+
+    if (plan === "pro") {
+      // Find all active rules of this user sorted by ID to see if this rule is within the first 5
+      const activeRules = await db.query.auto_reply_rules.findMany({
+        where: and(
+          eq(auto_reply_rules.user_id, rule.user_id),
+          eq(auto_reply_rules.is_active, true)
+        ),
+        orderBy: (auto_reply_rules, { asc }) => [asc(auto_reply_rules.id)],
+      });
+      const ruleIndex = activeRules.findIndex((r) => r.id === rule.id);
+      if (ruleIndex === -1 || ruleIndex >= 5) {
+        return NextResponse.json({ error: "Rule exceeds Pro active rules limit" }, { status: 403 });
+      }
+    }
+
+    if (rule.use_ai && plan !== "pro" && plan !== "business") {
+      return NextResponse.json({ error: "Owner does not have AI replies entitlement" }, { status: 403 });
     }
 
     const platform = PLATFORMS[rule.platform as PlatformId];

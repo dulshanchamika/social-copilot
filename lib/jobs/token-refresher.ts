@@ -6,6 +6,7 @@ import { social_accounts } from "@/lib/db/schema";
 import { encryptToken, decryptToken } from "@/lib/encryption";
 import { lt, sql } from "drizzle-orm";
 import { PLATFORMS, PlatformId } from "@/lib/platforms";
+import { TokenRefresherJobData } from "./types";
 
 
 const globalForTokenWorkers = global as unknown as { 
@@ -14,7 +15,7 @@ const globalForTokenWorkers = global as unknown as {
 
 export const tokenRefresherWorker = globalForTokenWorkers.tokenRefresherWorker || new Worker(
   TOKEN_REFRESHER_QUEUE,
-  async (job: Job) => {
+  async (job: Job<TokenRefresherJobData>) => {
     console.log(`Starting token refresh job: ${job.id}`);
 
     // 1. Find tokens expiring in the next 12 hours

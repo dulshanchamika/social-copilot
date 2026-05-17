@@ -7,6 +7,7 @@ import { PLATFORMS, PlatformId } from "@/lib/platforms";
 import { PlatformCard } from "@/components/dashboard/platform-card";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { AlertCircle, CheckCircle2 } from "lucide-react";
+import { LockedBanner } from "@/components/billing/locked-banner";
 
 export default async function AccountsPage({
   searchParams,
@@ -58,15 +59,22 @@ export default async function AccountsPage({
       )}
 
       {params.error && (
-        <Alert variant="destructive">
-          <AlertCircle className="h-4 w-4" />
-          <AlertTitle>Error</AlertTitle>
-          <AlertDescription>
-            {params.error === "token_exchange_failed" 
-              ? `Failed to connect ${params.platform}. Please check your credentials.`
-              : "An error occurred while connecting your account."}
-          </AlertDescription>
-        </Alert>
+        <div className="space-y-4">
+          <Alert variant="destructive">
+            <AlertCircle className="h-4 w-4" />
+            <AlertTitle>Error</AlertTitle>
+            <AlertDescription>
+              {params.error === "upgrade_required"
+                ? "You have reached your connected profiles limit. Upgrade your subscription plan to add more social accounts."
+                : params.error === "token_exchange_failed" 
+                  ? `Failed to connect ${params.platform}. Please check your credentials.`
+                  : "An error occurred while connecting your account."}
+            </AlertDescription>
+          </Alert>
+          {params.error === "upgrade_required" && (
+            <LockedBanner feature="accounts" />
+          )}
+        </div>
       )}
 
       <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">

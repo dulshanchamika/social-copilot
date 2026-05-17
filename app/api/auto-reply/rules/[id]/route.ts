@@ -103,6 +103,13 @@ export async function PATCH(
     if (body.tone !== undefined) updateData.tone = body.tone;
     if (body.isActive !== undefined) updateData.is_active = body.isActive;
 
+    if (updateData.use_ai === true) {
+      const { hasAIFeatures } = await import("@/lib/plan-gates");
+      if (!(await hasAIFeatures(user.id))) {
+        return NextResponse.json({ error: "upgrade_required", feature: "ai_replies" }, { status: 403 });
+      }
+    }
+
     if (Object.keys(updateData).length === 0) {
       return NextResponse.json({ error: "No fields to update" }, { status: 400 });
     }

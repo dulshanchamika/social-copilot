@@ -13,6 +13,8 @@ import { Plus, RefreshCcw } from "lucide-react";
 import { RuleList } from "@/components/auto-reply/rule-list";
 import { RuleSheet } from "@/components/auto-reply/rule-sheet";
 import { ActivityLogs } from "@/components/auto-reply/activity-logs";
+import { LockedBanner } from "@/components/billing/locked-banner";
+import { UpgradeDialog } from "@/components/billing/upgrade-dialog";
 
 export default function AutoReplyPage() {
   const [rules, setRules] = useState<any[]>([]);
@@ -21,6 +23,21 @@ export default function AutoReplyPage() {
   const [loadingLogs, setLoadingLogs] = useState(true);
   const [sheetOpen, setSheetOpen] = useState(false);
   const [editingRule, setEditingRule] = useState<any>(null);
+  const [userPlan, setUserPlan] = useState<string>("free");
+  const [upgradeDialogOpen, setUpgradeDialogOpen] = useState(false);
+  const [upgradeFeature, setUpgradeFeature] = useState<"auto_reply" | "ai_replies">("auto_reply");
+
+  const fetchUserPlan = async () => {
+    try {
+      const res = await fetch("/api/user/plan");
+      const data = await res.json();
+      if (data.plan) {
+        setUserPlan(data.plan.toLowerCase());
+      }
+    } catch (e) {
+      console.error("Error fetching user plan:", e);
+    }
+  };
 
   const fetchRules = async () => {
     setLoadingRules(true);
@@ -51,6 +68,7 @@ export default function AutoReplyPage() {
   useEffect(() => {
     fetchRules();
     fetchLogs();
+    fetchUserPlan();
   }, []);
 
   const handleEditRule = (rule: any) => {
@@ -59,6 +77,11 @@ export default function AutoReplyPage() {
   };
 
   const handleCreateRule = () => {
+    if (userPlan === "free") {
+      setUpgradeFeature("auto_reply");
+      setUpgradeDialogOpen(true);
+      return;
+    }
     setEditingRule(null);
     setSheetOpen(true);
   };
@@ -87,6 +110,10 @@ export default function AutoReplyPage() {
           </Button>
         </div>
       </div>
+
+      {userPlan === "free" && (
+        <LockedBanner feature="auto_reply" />
+      )}
 
       <div className="grid gap-8">
         <Card>
@@ -124,6 +151,16 @@ export default function AutoReplyPage() {
         onOpenChange={setSheetOpen}
         rule={editingRule}
         onSuccess={() => { fetchRules(); fetchLogs(); }}
+        onUpgradeTrigger={(feature) => {
+          setUpgradeFeature(feature);
+          setUpgradeDialogOpen(true);
+        }}
+      />
+
+      <UpgradeDialog 
+        isOpen={upgradeDialogOpen}
+        onOpenChange={setUpgradeDialogOpen}
+        feature={upgradeFeature}
       />
     </div>
   );

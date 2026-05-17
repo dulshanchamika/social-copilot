@@ -6,6 +6,7 @@ import { post_platform_results, social_accounts, account_followers_history } fro
 import { eq, inArray, and, gte } from "drizzle-orm";
 import { PLATFORMS, PlatformId } from "@/lib/platforms";
 import { decryptToken } from "@/lib/encryption";
+import { AnalyticsSyncerJobData } from "./types";
 
 const globalForWorkers = global as unknown as { 
   analyticsSyncerWorker: Worker;
@@ -13,7 +14,7 @@ const globalForWorkers = global as unknown as {
 
 export const analyticsSyncerWorker = globalForWorkers.analyticsSyncerWorker || new Worker(
   ANALYTICS_SYNCER_QUEUE,
-  async (job: Job) => {
+  async (job: Job<AnalyticsSyncerJobData>) => {
     console.log(`Starting analytics syncer job: ${job.id}`);
 
     // We fetch all published results that have a platform_post_id

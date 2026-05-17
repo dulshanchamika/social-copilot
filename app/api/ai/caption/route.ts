@@ -1,6 +1,7 @@
 import { NextRequest } from "next/server";
 import { auth } from "@clerk/nextjs/server";
 import { GoogleGenerativeAI } from "@google/generative-ai";
+import { hasAIFeatures } from "@/lib/plan-gates";
 
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || "");
 
@@ -11,6 +12,17 @@ export async function POST(req: NextRequest) {
       status: 401,
       headers: { "Content-Type": "application/json" },
     });
+  }
+
+  const isAllowed = await hasAIFeatures(userId);
+  if (!isAllowed) {
+    return new Response(
+      JSON.stringify({ error: "upgrade_required", feature: "ai_captions" }),
+      {
+        status: 403,
+        headers: { "Content-Type": "application/json" },
+      }
+    );
   }
 
   if (!process.env.GEMINI_API_KEY) {

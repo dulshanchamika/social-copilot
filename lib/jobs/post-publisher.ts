@@ -6,11 +6,7 @@ import { posts, post_platform_results, social_accounts } from "@/lib/db/schema";
 import { eq, inArray, and } from "drizzle-orm";
 import { PLATFORMS, PlatformId } from "@/lib/platforms";
 import { decryptToken } from "@/lib/encryption";
-
-
-interface PublishJobData {
-  postId: string;
-}
+import { PublishJobData } from "./types";
 
 const globalForWorkers = global as unknown as { 
   postPublisherWorker: Worker;
