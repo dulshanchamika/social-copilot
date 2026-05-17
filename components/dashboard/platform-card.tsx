@@ -18,33 +18,14 @@ import {
   Loader, 
   ExternalLink, 
   Unlink2,
-  AlertCircle,
-  Camera, 
-  Video, 
-  MessageCircle, 
-  Briefcase, 
-  X, 
-  Hash, 
-  Gamepad2, 
-  Music, 
-  Pin
+  AlertCircle
 } from "lucide-react";
 import { PlatformId } from "@/lib/platforms";
 import { cn } from "@/lib/utils";
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { BRAND_ICONS } from "@/components/ui/brand-icons";
 
-const ICON_MAP: Record<PlatformId, any> = {
-  instagram: Camera,
-  youtube: Video,
-  tiktok: Music,
-  facebook: MessageCircle,
-  linkedin: Briefcase,
-  pinterest: Pin,
-  discord: Gamepad2,
-  x: X,
-  slack: Hash,
-};
 
 interface PlatformCardProps {
   platform: {
@@ -61,7 +42,7 @@ interface PlatformCardProps {
 }
 
 export function PlatformCard({ platform, connectedAccount }: PlatformCardProps) {
-  const Icon = ICON_MAP[platform.id];
+  const Icon = BRAND_ICONS[platform.id];
   const isConnected = !!connectedAccount;
   const [isConnecting, setIsConnecting] = useState(false);
   const [isDisconnecting, setIsDisconnecting] = useState(false);

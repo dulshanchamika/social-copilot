@@ -66,8 +66,12 @@ export default async function BillingPage() {
     // Fetch active subscription
     try {
       subscription = await client.billing.getUserBillingSubscription(userId);
-    } catch (subError) {
-      console.error("Error fetching Clerk subscription:", subError);
+    } catch (subError: any) {
+      if (subError?.status === 403 || subError?.statusCode === 403 || String(subError).includes("Forbidden") || subError?.message?.includes("Forbidden")) {
+        console.warn("Clerk Billing is not enabled or forbidden (403) for this instance. Defaulting to free plan subscription.");
+      } else {
+        console.error("Error fetching Clerk subscription:", subError);
+      }
     }
 
     // Fetch billing statements (invoices)
@@ -114,11 +118,17 @@ export default async function BillingPage() {
             status: statusStr,
           };
         });
+      } else if (res.status === 403) {
+        console.warn(`Clerk Billing statements are not enabled or forbidden (403): ${res.status} ${res.statusText}`);
       } else {
         console.error(`Failed to fetch statements from Clerk: ${res.status} ${res.statusText}`);
       }
-    } catch (stmtError) {
-      console.error("Error fetching Clerk statements:", stmtError);
+    } catch (stmtError: any) {
+      if (stmtError?.status === 403 || stmtError?.statusCode === 403 || String(stmtError).includes("Forbidden") || stmtError?.message?.includes("Forbidden")) {
+        console.warn("Clerk Billing statements are not enabled or forbidden (403) for this instance.");
+      } else {
+        console.error("Error fetching Clerk statements:", stmtError);
+      }
     }
   } catch (clerkError) {
     console.error("Error initializing Clerk client or fetching billing details:", clerkError);
