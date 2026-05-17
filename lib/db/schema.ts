@@ -51,13 +51,14 @@ export const auto_reply_rules = pgTable("auto_reply_rules", {
   keywords: text("keywords").array(),
   reply_template: text("reply_template"),
   use_ai: boolean("use_ai").default(false).notNull(),
+  tone: text("tone"), // 'friendly', 'professional', 'witty', 'custom'
   is_active: boolean("is_active").default(true).notNull(),
 });
 
 export const auto_reply_logs = pgTable("auto_reply_logs", {
   id: uuid("id").primaryKey().defaultRandom(),
   rule_id: uuid("rule_id").references(() => auto_reply_rules.id, { onDelete: "cascade" }).notNull(),
-  comment_id: text("comment_id").notNull(),
+  comment_id: text("comment_id").notNull().unique(),
   comment_text: text("comment_text"),
   reply_sent: text("reply_sent"),
   created_at: timestamp("created_at").defaultNow().notNull(),

@@ -6,12 +6,15 @@ import { eq } from "drizzle-orm";
 
 import { PLATFORMS, PlatformId } from "@/lib/platforms";
 
-export async function GET() {
+export async function GET(req: Request) {
   try {
     const { userId } = await auth();
     if (!userId) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
+
+    const { searchParams } = new URL(req.url);
+    const mode = searchParams.get("mode");
 
     const user = await db.query.users.findFirst({
       where: eq(users.clerk_id, userId),
@@ -31,10 +34,18 @@ export async function GET() {
       .from(social_accounts)
       .where(eq(social_accounts.user_id, user.id));
 
-    // Filter out platforms that are not supported for publishing
-    const supportedAccounts = accounts.filter(
-      (acct) => PLATFORMS[acct.platform as PlatformId]?.canPublish
-    );
+    // Filter based on mode
+    const supportedAccounts = accounts.filter((acct) => {
+      const platform = PLATFORMS[acct.platform as PlatformId];
+      if (!platform) return false;
+      
+      if (mode === "auto-reply") {
+        return platform.canReply;
+      }
+      
+      // Default to composer flow (publishing)
+      return platform.canPublish;
+    });
 
     return NextResponse.json(supportedAccounts);
   } catch (error) {

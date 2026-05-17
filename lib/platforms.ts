@@ -30,8 +30,11 @@ export interface PlatformConfig {
   authUrl: string;
   tokenUrl: string;
   canPublish: boolean;
+  canReply: boolean;
   revokeToken?: (accessToken: string, clientId: string, clientSecret: string) => Promise<void>;
   publish: (accessToken: string, content: string, mediaUrls?: string[]) => Promise<string>;
+  fetchComments?: (accessToken: string, platformPostId: string) => Promise<{ id: string, text: string }[]>;
+  postReply?: (accessToken: string, platformPostId: string, commentId: string, replyText: string) => Promise<string>;
 }
 
 export const PLATFORMS: Record<PlatformId, PlatformConfig> = {
@@ -44,6 +47,7 @@ export const PLATFORMS: Record<PlatformId, PlatformConfig> = {
     authUrl: "https://api.instagram.com/oauth/authorize",
     tokenUrl: "https://api.instagram.com/oauth/access_token",
     canPublish: false,
+    canReply: false,
     publish: async () => {
       throw new Error("Instagram publishing is not yet implemented");
     },
@@ -57,6 +61,7 @@ export const PLATFORMS: Record<PlatformId, PlatformConfig> = {
     authUrl: "https://accounts.google.com/o/oauth2/v2/auth",
     tokenUrl: "https://oauth2.googleapis.com/token",
     canPublish: false,
+    canReply: false,
     revokeToken: async (token) => {
       await fetch(`https://oauth2.googleapis.com/revoke?token=${token}`, {
         method: "POST",
@@ -76,6 +81,7 @@ export const PLATFORMS: Record<PlatformId, PlatformConfig> = {
     authUrl: "https://www.tiktok.com/auth/authorize/",
     tokenUrl: "https://open-api.tiktok.com/oauth/access_token/",
     canPublish: false,
+    canReply: false,
     revokeToken: async (token, clientId, clientSecret) => {
       await fetch("https://open.tiktokapis.com/v2/oauth/revoke/", {
         method: "POST",
@@ -96,6 +102,7 @@ export const PLATFORMS: Record<PlatformId, PlatformConfig> = {
     authUrl: "https://www.facebook.com/v12.0/dialog/oauth",
     tokenUrl: "https://graph.facebook.com/v12.0/oauth/access_token",
     canPublish: false,
+    canReply: false,
     revokeToken: async (token) => {
       await fetch(`https://graph.facebook.com/v12.0/me/permissions?access_token=${token}`, {
         method: "DELETE",
@@ -114,6 +121,7 @@ export const PLATFORMS: Record<PlatformId, PlatformConfig> = {
     authUrl: "https://www.linkedin.com/oauth/v2/authorization",
     tokenUrl: "https://www.linkedin.com/oauth/v2/accessToken",
     canPublish: false,
+    canReply: false,
     revokeToken: async (token, clientId, clientSecret) => {
       await fetch("https://www.linkedin.com/oauth/v2/revoke", {
         method: "POST",
@@ -134,6 +142,7 @@ export const PLATFORMS: Record<PlatformId, PlatformConfig> = {
     authUrl: "https://www.pinterest.com/oauth/",
     tokenUrl: "https://api.pinterest.com/v5/oauth/token",
     canPublish: false,
+    canReply: false,
     revokeToken: async (token, clientId, clientSecret) => {
       await fetch("https://api.pinterest.com/v5/oauth/revoke", {
         method: "POST",
@@ -157,6 +166,7 @@ export const PLATFORMS: Record<PlatformId, PlatformConfig> = {
     authUrl: "https://discord.com/api/oauth2/authorize",
     tokenUrl: "https://discord.com/api/oauth2/token",
     canPublish: false,
+    canReply: false,
     revokeToken: async (token, clientId, clientSecret) => {
       await fetch("https://discord.com/api/oauth2/token/revoke", {
         method: "POST",
@@ -177,6 +187,7 @@ export const PLATFORMS: Record<PlatformId, PlatformConfig> = {
     authUrl: "https://twitter.com/i/oauth2/authorize",
     tokenUrl: "https://api.twitter.com/2/oauth2/token",
     canPublish: true,
+    canReply: true,
     revokeToken: async (token, clientId) => {
       await fetch("https://api.twitter.com/2/oauth2/revoke", {
         method: "POST",
@@ -199,6 +210,48 @@ export const PLATFORMS: Record<PlatformId, PlatformConfig> = {
       }
       return data.data.id;
     },
+    fetchComments: async (token, platformPostId) => {
+      const res = await fetch(
+        `https://api.twitter.com/2/tweets/search/recent?query=conversation_id:${platformPostId}&tweet.fields=author_id,created_at,text`,
+        {
+          headers: {
+            "Authorization": `Bearer ${token}`,
+          },
+        }
+      );
+      const data = await res.json();
+      if (!res.ok) {
+        // Handle cases where search might not be available or no results found
+        if (res.status === 400) return [];
+        throw new Error(data.detail || data.message || "X API error fetching comments");
+      }
+      return (data.data || [])
+        .filter((tweet: { id: string }) => tweet.id !== platformPostId) // Don't include the post itself
+        .map((tweet: { id: string; text: string }) => ({
+          id: tweet.id,
+          text: tweet.text,
+        }));
+    },
+    postReply: async (token, platformPostId, commentId, replyText) => {
+      const res = await fetch("https://api.twitter.com/2/tweets", {
+        method: "POST",
+        headers: {
+          "Authorization": `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          text: replyText,
+          reply: {
+            in_reply_to_tweet_id: commentId,
+          },
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.detail || data.message || "X API error posting reply");
+      }
+      return data.data.id;
+    },
   },
   slack: {
     id: "slack",
@@ -209,6 +262,7 @@ export const PLATFORMS: Record<PlatformId, PlatformConfig> = {
     authUrl: "https://slack.com/oauth/v2/authorize",
     tokenUrl: "https://slack.com/api/oauth.v2.access",
     canPublish: false,
+    canReply: false,
     revokeToken: async (token) => {
       await fetch("https://slack.com/api/auth.revoke", {
         method: "POST",
