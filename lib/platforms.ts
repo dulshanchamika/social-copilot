@@ -35,6 +35,9 @@ export interface PlatformConfig {
   publish: (accessToken: string, content: string, mediaUrls?: string[]) => Promise<string>;
   fetchComments?: (accessToken: string, platformPostId: string) => Promise<{ id: string, text: string }[]>;
   postReply?: (accessToken: string, platformPostId: string, commentId: string, replyText: string) => Promise<string>;
+  fetchAnalytics?: (accessToken: string, platformPostId: string) => Promise<{ likes: number; comments: number; shares: number; reach: number; engagement_rate: number }>;
+  /** Returns the current follower/subscriber count for the authenticated account. */
+  fetchFollowerCount?: (accessToken: string) => Promise<number>;
 }
 
 export const PLATFORMS: Record<PlatformId, PlatformConfig> = {
@@ -251,6 +254,47 @@ export const PLATFORMS: Record<PlatformId, PlatformConfig> = {
         throw new Error(data.detail || data.message || "X API error posting reply");
       }
       return data.data.id;
+    },
+    fetchAnalytics: async (token, platformPostId) => {
+      const res = await fetch(`https://api.twitter.com/2/tweets/${platformPostId}?tweet.fields=public_metrics`, {
+        headers: {
+          "Authorization": `Bearer ${token}`,
+        },
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.detail || data.message || "X API error fetching analytics");
+      }
+      
+      const metrics = data.data?.public_metrics || {
+        like_count: 0,
+        reply_count: 0,
+        retweet_count: 0,
+        impression_count: 0,
+      };
+
+      const reach = metrics.impression_count || 0;
+      const totalEngagements = metrics.like_count + metrics.reply_count + metrics.retweet_count;
+      const engagement_rate = reach > 0 ? Math.round((totalEngagements / reach) * 10000) : 0; // Stored as integer (e.g. 1.25% = 125)
+
+      return {
+        likes: metrics.like_count || 0,
+        comments: metrics.reply_count || 0,
+        shares: metrics.retweet_count || 0,
+        reach,
+        engagement_rate,
+      };
+    },
+    fetchFollowerCount: async (token) => {
+      const res = await fetch(
+        "https://api.twitter.com/2/users/me?user.fields=public_metrics",
+        { headers: { "Authorization": `Bearer ${token}` } }
+      );
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.detail || data.message || "X API error fetching follower count");
+      }
+      return data.data?.public_metrics?.followers_count ?? 0;
     },
   },
   slack: {

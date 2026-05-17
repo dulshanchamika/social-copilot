@@ -1,7 +1,7 @@
 import { Worker, Job } from "bullmq";
 import { redis } from "../redis";
 import { db } from "../db";
-import { auto_reply_rules, auto_reply_logs } from "../db/schema";
+import { auto_reply_rules, auto_reply_logs, post_platform_results } from "../db/schema";
 import { eq } from "drizzle-orm";
 import { PLATFORMS, PlatformId } from "../platforms";
 import { decryptToken } from "../encryption";
@@ -12,6 +12,7 @@ export const autoReplierWorker = new Worker(
   AUTO_REPLIER_QUEUE,
   async (job: Job) => {
     const { ruleId, commentId, commentText, platformPostId } = job.data;
+    let postContent = job.data.postContent;
     console.log(`Processing reply for comment ${commentId}...`);
 
     try {
@@ -23,8 +24,7 @@ export const autoReplierWorker = new Worker(
       });
 
       if (!rule || !rule.account || !rule.is_active) {
-        console.log(`Rule ${ruleId} is no longer active or missing.`);
-        return;
+        throw new Error("Rule is no longer active or missing.");
       }
 
       const platform = PLATFORMS[rule.platform as PlatformId];
@@ -38,14 +38,22 @@ export const autoReplierWorker = new Worker(
 
       let replyText = "";
       if (rule.use_ai) {
-        replyText = await generateAutoReply(commentText, rule.tone || "friendly");
+        if (!postContent) {
+          const postResult = await db.query.post_platform_results.findFirst({
+            where: eq(post_platform_results.platform_post_id, platformPostId),
+            with: {
+              post: true,
+            },
+          });
+          postContent = postResult?.post?.content || "";
+        }
+        replyText = await generateAutoReply(commentText, postContent, rule.tone || "friendly");
       } else {
         replyText = rule.reply_template || "";
       }
 
       if (!replyText) {
-        console.log("No reply text generated.");
-        return;
+        throw new Error("No reply text generated.");
       }
 
       const decryptedToken = decryptToken(rule.account.access_token);
@@ -61,12 +69,19 @@ export const autoReplierWorker = new Worker(
       );
 
       await db.update(auto_reply_logs)
-        .set({ reply_sent: replyText })
+        .set({ reply_sent: replyText, status: "success", error: null })
         .where(eq(auto_reply_logs.comment_id, commentId));
 
       console.log(`Successfully replied to comment ${commentId} with reply ${platformReplyId}`);
-    } catch (error) {
+    } catch (error: any) {
       console.error(`Auto-replier error for rule ${ruleId}:`, error);
+      try {
+        await db.update(auto_reply_logs)
+          .set({ status: "failed", error: error.message || String(error) })
+          .where(eq(auto_reply_logs.comment_id, commentId));
+      } catch (dbErr) {
+        console.error("Failed to update auto_reply_logs status to failed:", dbErr);
+      }
       throw error;
     }
   },

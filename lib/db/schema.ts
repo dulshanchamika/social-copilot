@@ -40,6 +40,12 @@ export const post_platform_results = pgTable("post_platform_results", {
   platform_post_id: text("platform_post_id"),
   status: text("status").notNull(), // 'published', 'failed'
   error: text("error"),
+  likes: integer("likes").default(0),
+  comments: integer("comments").default(0),
+  shares: integer("shares").default(0),
+  reach: integer("reach").default(0),
+  engagement_rate: integer("engagement_rate").default(0), // stored as basis points (e.g., 100 = 1%)
+  metrics_updated_at: timestamp("metrics_updated_at"),
 });
 
 export const auto_reply_rules = pgTable("auto_reply_rules", {
@@ -61,6 +67,8 @@ export const auto_reply_logs = pgTable("auto_reply_logs", {
   comment_id: text("comment_id").notNull().unique(),
   comment_text: text("comment_text"),
   reply_sent: text("reply_sent"),
+  status: text("status").default("processing").notNull(), // 'processing', 'success', 'failed'
+  error: text("error"),
   created_at: timestamp("created_at").defaultNow().notNull(),
 });
 
@@ -74,6 +82,13 @@ export const media_assets = pgTable("media_assets", {
   created_at: timestamp("created_at").defaultNow().notNull(),
 });
 
+export const account_followers_history = pgTable("account_followers_history", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  account_id: uuid("account_id").references(() => social_accounts.id, { onDelete: "cascade" }).notNull(),
+  followers: integer("followers").notNull(),
+  recorded_at: timestamp("recorded_at").defaultNow().notNull(),
+});
+
 // Relations
 export const usersRelations = relations(users, ({ many }) => ({
   social_accounts: many(social_accounts),
@@ -82,8 +97,13 @@ export const usersRelations = relations(users, ({ many }) => ({
   media_assets: many(media_assets),
 }));
 
-export const socialAccountsRelations = relations(social_accounts, ({ one }) => ({
+export const socialAccountsRelations = relations(social_accounts, ({ one, many }) => ({
   user: one(users, { fields: [social_accounts.user_id], references: [users.id] }),
+  followers_history: many(account_followers_history),
+}));
+
+export const accountFollowersHistoryRelations = relations(account_followers_history, ({ one }) => ({
+  account: one(social_accounts, { fields: [account_followers_history.account_id], references: [social_accounts.id] }),
 }));
 
 export const postsRelations = relations(posts, ({ one, many }) => ({

@@ -26,6 +26,8 @@ export async function GET(req: NextRequest) {
         comment_id: auto_reply_logs.comment_id,
         comment_text: auto_reply_logs.comment_text,
         reply_sent: auto_reply_logs.reply_sent,
+        status: auto_reply_logs.status,
+        error: auto_reply_logs.error,
         created_at: auto_reply_logs.created_at,
         platform: auto_reply_rules.platform,
       })

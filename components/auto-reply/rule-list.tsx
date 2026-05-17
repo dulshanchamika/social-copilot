@@ -49,7 +49,7 @@ export function RuleList({ rules, loading, onEdit, onRefresh }: RuleListProps) {
       const res = await fetch(`/api/auto-reply/rules/${rule.id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ is_active: !rule.is_active }),
+        body: JSON.stringify({ isActive: !rule.is_active }),
       });
 
       if (!res.ok) throw new Error("Failed to toggle rule");

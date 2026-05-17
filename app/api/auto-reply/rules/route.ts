@@ -62,7 +62,7 @@ export async function POST(req: NextRequest) {
       isActive 
     } = body;
 
-    if (!platform || !accountId || !triggerType) {
+    if (!accountId || !triggerType) {
       return NextResponse.json({ error: "Missing required fields" }, { status: 400 });
     }
 
@@ -78,18 +78,24 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Invalid account" }, { status: 400 });
     }
 
+    if (platform && platform !== account.platform) {
+      return NextResponse.json({ error: "Platform mismatch" }, { status: 400 });
+    }
+
+    const actualPlatform = account.platform;
+
     // Validate platform support for auto-replies
-    const platformConfig = PLATFORMS[platform as PlatformId];
+    const platformConfig = PLATFORMS[actualPlatform as PlatformId];
     if (!platformConfig || !platformConfig.fetchComments || !platformConfig.postReply) {
       return NextResponse.json(
-        { error: `Platform ${platform} does not support auto-replies yet.` },
+        { error: `Platform ${actualPlatform} does not support auto-replies yet.` },
         { status: 400 }
       );
     }
 
     const newRule = await db.insert(auto_reply_rules).values({
       user_id: user.id,
-      platform,
+      platform: actualPlatform,
       account_id: accountId,
       trigger_type: triggerType,
       keywords: keywords || [],

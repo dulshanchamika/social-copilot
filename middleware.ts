@@ -8,6 +8,7 @@ const isProtectedRoute = createRouteMatcher([
 const isPublicApiRoute = createRouteMatcher([
   '/api/webhooks/clerk',
   '/api/imagekit/auth',
+  '/api/auto-reply/trigger',
 ]);
 
 export default clerkMiddleware(async (auth, request) => {

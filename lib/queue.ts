@@ -5,12 +5,14 @@ export const TOKEN_REFRESHER_QUEUE = "token-refresher";
 export const POST_PUBLISHER_QUEUE = "post-publisher";
 export const COMMENT_WATCHER_QUEUE = "comment-watcher";
 export const AUTO_REPLIER_QUEUE = "auto-replier";
+export const ANALYTICS_SYNCER_QUEUE = "analytics-syncer";
 
 const globalForQueues = global as unknown as { 
   tokenRefresherQueue: Queue;
   postPublisherQueue: Queue;
   commentWatcherQueue: Queue;
   autoReplierQueue: Queue;
+  analyticsSyncerQueue: Queue;
 };
 
 export const tokenRefresherQueue = globalForQueues.tokenRefresherQueue || new Queue(TOKEN_REFRESHER_QUEUE, {
@@ -56,11 +58,19 @@ export const autoReplierQueue = globalForQueues.autoReplierQueue || new Queue(AU
   },
 });
 
+export const analyticsSyncerQueue = globalForQueues.analyticsSyncerQueue || new Queue(ANALYTICS_SYNCER_QUEUE, {
+  connection: redis,
+  defaultJobOptions: {
+    removeOnComplete: true,
+  },
+});
+
 if (process.env.NODE_ENV !== "production") {
   globalForQueues.tokenRefresherQueue = tokenRefresherQueue;
   globalForQueues.postPublisherQueue = postPublisherQueue;
   globalForQueues.commentWatcherQueue = commentWatcherQueue;
   globalForQueues.autoReplierQueue = autoReplierQueue;
+  globalForQueues.analyticsSyncerQueue = analyticsSyncerQueue;
 }
 
 // Schedule the token refresher to run every 6 hours
@@ -86,6 +96,19 @@ export async function scheduleCommentWatcher() {
         pattern: "*/5 * * * *", // Every 5 minutes
       },
       jobId: "comment-watcher-job",
+    }
+  );
+}
+
+export async function scheduleAnalyticsSyncer() {
+  await analyticsSyncerQueue.add(
+    "sync-analytics",
+    {},
+    {
+      repeat: {
+        pattern: "*/30 * * * *", // Every 30 minutes
+      },
+      jobId: "analytics-syncer-job",
     }
   );
 }
