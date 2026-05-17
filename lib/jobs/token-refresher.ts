@@ -1,6 +1,6 @@
 import { Worker, Job } from "bullmq";
 import { redis } from "@/lib/redis";
-import { TOKEN_REFRESHER_QUEUE } from "@/lib/queue";
+import { TOKEN_REFRESHER_QUEUE, handleJobFailure } from "@/lib/queue";
 import { db } from "@/lib/db";
 import { social_accounts } from "@/lib/db/schema";
 import { encryptToken, decryptToken } from "@/lib/encryption";
@@ -12,6 +12,22 @@ import { TokenRefresherJobData } from "./types";
 const globalForTokenWorkers = global as unknown as { 
   tokenRefresherWorker: Worker;
 };
+
+function isRetryableError(error: any): boolean {
+  if (!error) return false;
+  const message = (error.message || String(error)).toLowerCase();
+  if (
+    message.includes("invalid_grant") ||
+    message.includes("invalid_client") ||
+    message.includes("invalid_request") ||
+    message.includes("unauthorized") ||
+    message.includes("not found") ||
+    message.includes("forbidden")
+  ) {
+    return false;
+  }
+  return true;
+}
 
 export const tokenRefresherWorker = globalForTokenWorkers.tokenRefresherWorker || new Worker(
   TOKEN_REFRESHER_QUEUE,
@@ -28,6 +44,7 @@ export const tokenRefresherWorker = globalForTokenWorkers.tokenRefresherWorker |
 
     console.log(`Found ${expiringSoon.length} tokens to refresh`);
 
+    const retryableErrors: any[] = [];
     for (const account of expiringSoon) {
       const platform = account.platform as PlatformId;
       const config = PLATFORMS[platform];
@@ -81,9 +98,15 @@ export const tokenRefresherWorker = globalForTokenWorkers.tokenRefresherWorker |
           .where(sql`id = ${account.id}`);
 
         console.log(`Successfully refreshed token for ${platform} account ${account.id}`);
-      } catch (error) {
+      } catch (error: any) {
         console.error(`Error refreshing token for ${platform} account ${account.id}:`, error);
+        if (isRetryableError(error)) {
+          retryableErrors.push(error);
+        }
       }
+    }
+    if (retryableErrors.length > 0) {
+      throw new Error(`Token refresher job failed with ${retryableErrors.length} retryable errors. First error: ${retryableErrors[0].message}`);
     }
   },
   { connection: redis }
@@ -95,6 +118,7 @@ tokenRefresherWorker.on("completed", (job) => {
   console.log(`Job ${job.id} completed successfully`);
 });
 
-tokenRefresherWorker.on("failed", (job, err) => {
+tokenRefresherWorker.on("failed", async (job, err) => {
   console.error(`Job ${job?.id} failed:`, err);
+  await handleJobFailure(job, err);
 });

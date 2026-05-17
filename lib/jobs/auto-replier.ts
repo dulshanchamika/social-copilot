@@ -6,7 +6,7 @@ import { eq, and } from "drizzle-orm";
 import { PLATFORMS, PlatformId } from "../platforms";
 import { decryptToken } from "../encryption";
 import { generateAutoReply } from "../services/ai-service";
-import { AUTO_REPLIER_QUEUE } from "../queue";
+import { AUTO_REPLIER_QUEUE, handleJobFailure } from "../queue";
 import { AutoReplierJobData } from "./types";
 
 export const autoReplierWorker = new Worker(
@@ -113,3 +113,12 @@ export const autoReplierWorker = new Worker(
   },
   { connection: redis }
 );
+
+autoReplierWorker.on("completed", (job) => {
+  console.log(`Auto Replier Job ${job.id} completed successfully`);
+});
+
+autoReplierWorker.on("failed", async (job, err) => {
+  console.error(`Auto Replier Job ${job?.id} failed:`, err);
+  await handleJobFailure(job, err);
+});

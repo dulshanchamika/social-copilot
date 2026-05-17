@@ -5,8 +5,24 @@ import { auto_reply_rules, auto_reply_logs, post_platform_results, posts } from 
 import { eq, and, desc } from "drizzle-orm";
 import { PLATFORMS, PlatformId } from "../platforms";
 import { decryptToken } from "../encryption";
-import { autoReplierQueue, COMMENT_WATCHER_QUEUE } from "../queue";
+import { autoReplierQueue, COMMENT_WATCHER_QUEUE, handleJobFailure } from "../queue";
 import { CommentWatcherJobData } from "./types";
+
+function isRetryableError(error: any): boolean {
+  if (!error) return false;
+  const message = (error.message || String(error)).toLowerCase();
+  if (
+    message.includes("invalid_grant") ||
+    message.includes("invalid_client") ||
+    message.includes("invalid_request") ||
+    message.includes("unauthorized") ||
+    message.includes("not found") ||
+    message.includes("forbidden")
+  ) {
+    return false;
+  }
+  return true;
+}
 
 export const commentWatcherWorker = new Worker(
   COMMENT_WATCHER_QUEUE,
@@ -37,6 +53,7 @@ export const commentWatcherWorker = new Worker(
         rules.sort((a, b) => a.id.localeCompare(b.id));
       }
 
+      const retryableErrors: any[] = [];
       for (const rule of activeRules) {
         try {
           const platform = PLATFORMS[rule.platform as PlatformId];
@@ -168,44 +185,16 @@ export const commentWatcherWorker = new Worker(
                     });
                   }
 
-                  // 7. Trigger the documented API endpoint
-                  const appUrl = process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000";
-                  console.log(`Triggering auto-reply API for comment ${comment.id} via ${appUrl}/api/auto-reply/trigger`);
-                  
-                  try {
-                    const response = await fetch(`${appUrl}/api/auto-reply/trigger`, {
-                      method: "POST",
-                      headers: {
-                        "Content-Type": "application/json",
-                      },
-                      body: JSON.stringify({
-                        ruleId: rule.id,
-                        commentId: comment.id,
-                        commentText: comment.text,
-                        platformPostId: res.platformPostId,
-                        postContent: res.postContent,
-                      }),
-                    });
-
-                    if (!response.ok) {
-                      const errorData = await response.json().catch(() => ({}));
-                      throw new Error(errorData.error || `HTTP error! status: ${response.status}`);
-                    }
-
-                    console.log(`Successfully triggered reply API for comment ${comment.id}`);
-                  } catch (fetchError: any) {
-                    console.error(`Failed to trigger auto-reply API over HTTP:`, fetchError);
-                    
-                    // Fall back to direct queue injection for robust failover
-                    console.log(`Falling back to direct BullMQ enqueue for comment ${comment.id}`);
-                    await autoReplierQueue.add("send-reply", {
-                      ruleId: rule.id,
-                      commentId: comment.id,
-                      commentText: comment.text,
-                      platformPostId: res.platformPostId,
-                      postContent: res.postContent,
-                    });
-                  }
+                  // 7. Enqueue the autoReplierQueue job directly
+                  console.log(`Enqueueing auto-replier job for comment ${comment.id} directly`);
+                  await autoReplierQueue.add("send-reply", {
+                    ruleId: rule.id,
+                    commentId: comment.id,
+                    commentText: comment.text,
+                    platformPostId: res.platformPostId,
+                    postContent: res.postContent,
+                  });
+                  console.log(`Successfully enqueued auto-replier job for comment ${comment.id}`);
                 } catch (error: any) {
                   // If it's a unique constraint violation (code 23505 for Postgres), 
                   // it means another rule or worker pass already claimed this comment.
@@ -218,13 +207,30 @@ export const commentWatcherWorker = new Worker(
               }
             }
           }
-        } catch (error) {
+        } catch (error: any) {
           console.error(`Error processing rule ${rule.id}:`, error);
+          if (isRetryableError(error)) {
+            retryableErrors.push(error);
+          }
         }
+      }
+
+      if (retryableErrors.length > 0) {
+        throw new Error(`Comment watcher job failed with ${retryableErrors.length} retryable errors. First error: ${retryableErrors[0].message}`);
       }
     } catch (error) {
       console.error("Comment watcher error:", error);
+      throw error;
     }
   },
   { connection: redis }
 );
+
+commentWatcherWorker.on("completed", (job) => {
+  console.log(`Comment Watcher Job ${job.id} completed successfully`);
+});
+
+commentWatcherWorker.on("failed", async (job, err) => {
+  console.error(`Comment Watcher Job ${job?.id} failed:`, err);
+  await handleJobFailure(job, err);
+});

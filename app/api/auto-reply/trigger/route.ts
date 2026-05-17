@@ -1,10 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { auto_reply_rules, auto_reply_logs, post_platform_results } from "@/lib/db/schema";
+import { auto_reply_rules, auto_reply_logs } from "@/lib/db/schema";
 import { eq, and } from "drizzle-orm";
-import { PLATFORMS, PlatformId } from "@/lib/platforms";
-import { decryptToken } from "@/lib/encryption";
-import { generateAutoReply } from "@/lib/services/ai-service";
+import { autoReplierQueue } from "@/lib/queue";
 
 export async function POST(req: NextRequest) {
   let commentId: string | undefined;
@@ -17,98 +15,80 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Missing required fields" }, { status: 400 });
     }
 
-    console.log(`Processing trigger reply for comment ${commentId}...`);
+    console.log(`Processing trigger reply for comment ${commentId} via enqueue...`);
 
     const rule = await db.query.auto_reply_rules.findFirst({
       where: eq(auto_reply_rules.id, ruleId),
       with: {
-        account: true,
         user: true,
       },
     });
 
-    if (!rule || !rule.account || !rule.user || !rule.is_active) {
-      return NextResponse.json({ error: "Rule is inactive, missing, or owner not found" }, { status: 400 });
+    if (!rule || !rule.is_active) {
+      return NextResponse.json({ error: "Rule is inactive or missing" }, { status: 400 });
     }
 
-    // Plan entitlement check
-    const plan = (rule.user.plan || "free").toLowerCase();
-    if (plan === "free") {
-      return NextResponse.json({ error: "Owner has no auto-reply entitlement (Free plan)" }, { status: 403 });
+    const existingLog = await db.query.auto_reply_logs.findFirst({
+      where: eq(auto_reply_logs.comment_id, commentId),
+    });
+
+    if (existingLog && (existingLog.status === "success" || existingLog.status === "processing")) {
+      return NextResponse.json({ error: "Comment is already processed or processing" }, { status: 400 });
     }
 
-    if (plan === "pro") {
-      // Find all active rules of this user sorted by ID to see if this rule is within the first 5
-      const activeRules = await db.query.auto_reply_rules.findMany({
-        where: and(
-          eq(auto_reply_rules.user_id, rule.user_id),
-          eq(auto_reply_rules.is_active, true)
-        ),
-        orderBy: (auto_reply_rules, { asc }) => [asc(auto_reply_rules.id)],
-      });
-      const ruleIndex = activeRules.findIndex((r) => r.id === rule.id);
-      if (ruleIndex === -1 || ruleIndex >= 5) {
-        return NextResponse.json({ error: "Rule exceeds Pro active rules limit" }, { status: 403 });
+    if (existingLog && existingLog.status === "failed") {
+      // Transition reservation atomically from failed to processing
+      const updated = await db
+        .update(auto_reply_logs)
+        .set({
+          status: "processing",
+          rule_id: ruleId,
+          comment_text: commentText,
+          reply_sent: null,
+          error: null,
+          created_at: new Date(),
+        })
+        .where(
+          and(
+            eq(auto_reply_logs.id, existingLog.id),
+            eq(auto_reply_logs.status, "failed")
+          )
+        )
+        .returning();
+
+      if (updated.length === 0) {
+        return NextResponse.json({ error: "Failed log already claimed/transitioned by another rule" }, { status: 400 });
       }
-    }
-
-    if (rule.use_ai && plan !== "pro" && plan !== "business") {
-      return NextResponse.json({ error: "Owner does not have AI replies entitlement" }, { status: 403 });
-    }
-
-    const platform = PLATFORMS[rule.platform as PlatformId];
-    if (!platform) {
-      return NextResponse.json({ error: `Platform ${rule.platform} not found` }, { status: 400 });
-    }
-
-    if (!platform.postReply) {
-      return NextResponse.json({ error: `Platform ${rule.platform} does not support posting replies` }, { status: 400 });
-    }
-
-    let replyText = "";
-    if (rule.use_ai) {
-      let resolvedPostContent = postContent;
-      if (!resolvedPostContent) {
-        const postResult = await db.query.post_platform_results.findFirst({
-          where: eq(post_platform_results.platform_post_id, platformPostId),
-          with: {
-            post: true,
-          },
+    } else if (!existingLog) {
+      try {
+        await db.insert(auto_reply_logs).values({
+          rule_id: ruleId,
+          comment_id: commentId,
+          comment_text: commentText,
+          status: "processing",
         });
-        resolvedPostContent = postResult?.post?.content || "";
+      } catch (error: any) {
+        if (error.code === "23505") {
+          return NextResponse.json({ error: "Comment already reserved" }, { status: 400 });
+        }
+        throw error;
       }
-      replyText = await generateAutoReply(commentText, resolvedPostContent, rule.tone || "friendly");
-    } else {
-      replyText = rule.reply_template || "";
     }
 
-    if (!replyText) {
-      return NextResponse.json({ error: "No reply text generated" }, { status: 400 });
-    }
-
-    const decryptedToken = decryptToken(rule.account.access_token);
-    if (!decryptedToken) {
-      return NextResponse.json({ error: "Failed to decrypt access token" }, { status: 500 });
-    }
-
-    const platformReplyId = await platform.postReply(
-      decryptedToken,
-      platformPostId,
+    // Enqueue the job in the BullMQ queue
+    await autoReplierQueue.add("send-reply", {
+      ruleId,
       commentId,
-      replyText
-    );
+      commentText,
+      platformPostId,
+      postContent,
+    });
 
-    // Update log with the sent reply text
-    await db.update(auto_reply_logs)
-      .set({ reply_sent: replyText, status: "success", error: null })
-      .where(eq(auto_reply_logs.comment_id, commentId));
-
-    console.log(`Successfully replied to comment ${commentId} with reply ${platformReplyId}`);
+    console.log(`Successfully enqueued reply job for comment ${commentId}`);
 
     return NextResponse.json({
       success: true,
-      replyId: platformReplyId,
-      replyText,
+      message: "Auto-reply job enqueued successfully",
     });
   } catch (error: any) {
     console.error("Error in auto-reply trigger route:", error);

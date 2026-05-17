@@ -1,6 +1,6 @@
 import { Worker, Job } from "bullmq";
 import { redis } from "@/lib/redis";
-import { ANALYTICS_SYNCER_QUEUE } from "@/lib/queue";
+import { ANALYTICS_SYNCER_QUEUE, handleJobFailure } from "@/lib/queue";
 import { db } from "@/lib/db";
 import { post_platform_results, social_accounts, account_followers_history } from "@/lib/db/schema";
 import { eq, inArray, and, gte } from "drizzle-orm";
@@ -12,10 +12,27 @@ const globalForWorkers = global as unknown as {
   analyticsSyncerWorker: Worker;
 };
 
+function isRetryableError(error: any): boolean {
+  if (!error) return false;
+  const message = (error.message || String(error)).toLowerCase();
+  if (
+    message.includes("invalid_grant") ||
+    message.includes("invalid_client") ||
+    message.includes("invalid_request") ||
+    message.includes("unauthorized") ||
+    message.includes("not found") ||
+    message.includes("forbidden")
+  ) {
+    return false;
+  }
+  return true;
+}
+
 export const analyticsSyncerWorker = globalForWorkers.analyticsSyncerWorker || new Worker(
   ANALYTICS_SYNCER_QUEUE,
   async (job: Job<AnalyticsSyncerJobData>) => {
     console.log(`Starting analytics syncer job: ${job.id}`);
+    const retryableErrors: any[] = [];
 
     // We fetch all published results that have a platform_post_id
     // In a real production system, you would paginate or filter by recently published posts (e.g. within last 30 days)
@@ -70,8 +87,11 @@ export const analyticsSyncerWorker = globalForWorkers.analyticsSyncerWorker || n
             .where(eq(post_platform_results.id, result.id));
 
           console.log(`Successfully synced analytics for result ${result.id} (Platform: ${result.platform})`);
-        } catch (error) {
+        } catch (error: any) {
           console.error(`Failed to sync analytics for result ${result.id}:`, error);
+          if (isRetryableError(error)) {
+            retryableErrors.push(error);
+          }
         }
       }
     }
@@ -111,9 +131,16 @@ export const analyticsSyncerWorker = globalForWorkers.analyticsSyncerWorker || n
         });
 
         console.log(`Recorded follower count (${followers}) for account ${account.id} (Platform: ${account.platform})`);
-      } catch (error) {
+      } catch (error: any) {
         console.error(`Failed to snapshot follower count for account ${account.id}:`, error);
+        if (isRetryableError(error)) {
+          retryableErrors.push(error);
+        }
       }
+    }
+
+    if (retryableErrors.length > 0) {
+      throw new Error(`Analytics syncer job failed with ${retryableErrors.length} retryable errors. First error: ${retryableErrors[0].message}`);
     }
 
     console.log(`Analytics syncer job ${job.id} completed.`);
@@ -129,6 +156,7 @@ analyticsSyncerWorker.on("completed", (job) => {
   console.log(`Analytics Syncer Job ${job.id} completed successfully`);
 });
 
-analyticsSyncerWorker.on("failed", (job, err) => {
+analyticsSyncerWorker.on("failed", async (job, err) => {
   console.error(`Analytics Syncer Job ${job?.id} failed:`, err);
+  await handleJobFailure(job, err);
 });

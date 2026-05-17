@@ -11,14 +11,11 @@ export async function register() {
         globalForWorkers.workerProcessStarted = true;
         
         const { spawn } = await import("child_process");
-        const path = await import("path");
 
         console.log("[Instrumentation] Starting standalone BullMQ worker process in development...");
         
-        const workerPath = path.resolve(process.cwd(), "workers/index.ts");
-        
-        // Spawn the worker process running 'npx tsx workers/index.ts'
-        const workerProcess = spawn("npx", ["tsx", workerPath], {
+        // Spawn the worker process running 'npm run worker'
+        const workerProcess = spawn("npm", ["run", "worker"], {
           stdio: "inherit",
           shell: true,
           env: {

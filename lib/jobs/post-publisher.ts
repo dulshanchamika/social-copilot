@@ -1,6 +1,6 @@
 import { Worker, Job } from "bullmq";
 import { redis } from "@/lib/redis";
-import { POST_PUBLISHER_QUEUE } from "@/lib/queue";
+import { POST_PUBLISHER_QUEUE, handleJobFailure } from "@/lib/queue";
 import { db } from "@/lib/db";
 import { posts, post_platform_results, social_accounts } from "@/lib/db/schema";
 import { eq, inArray, and } from "drizzle-orm";
@@ -161,6 +161,7 @@ postPublisherWorker.on("completed", (job) => {
   console.log(`Post Job ${job.id} completed successfully`);
 });
 
-postPublisherWorker.on("failed", (job, err) => {
+postPublisherWorker.on("failed", async (job, err) => {
   console.error(`Post Job ${job?.id} failed:`, err);
+  await handleJobFailure(job, err);
 });
